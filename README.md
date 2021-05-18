@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # Selective Encryption for CockroachDB Stores
+=======
+# Encryption at rest
+>>>>>>> 0886063 (wip)
 
 #### This tutorial walks through setting up two disks per node, with one disk encrypted and containing sensitive information and the other disk having plaintext data.
 
