@@ -22,6 +22,8 @@ First, let's assign some variables to easily manage this setup in a scriptable f
 ```bash
 export keypath="${PWD}/workdir/key"
 export storepath="${PWD}/workdir/data"
+mkdir -p "${keypath}"
+mkdir -p "${storepath}"
 ```
 
 Create an Encryption Key
@@ -31,9 +33,8 @@ cockroach gen encryption-key -s 128 $keypath/aes-128.key
 ```
 
 Confirm the Encryption Key was created
-```
-successfully created AES-128 key: /Users/artem/Documents/cockroach-work/cockroach-demo/workdir/aes-128.key
-```
+
+`successfully created AES-128 key: /Users/artem/Documents/cockroach-work/cockroach-demo/workdir/aes-128.key`
 
 ### Start a CockroachDB Cluster with an Encrypted and Non-Encrypted Store.
 
@@ -108,18 +109,19 @@ cockroach sql --insecure \
 
 Now let’s look at the ranges of the table to see if they have been moved to the encrypted store.
 
-```sql
-SHOW ALL ZONE CONFIGURATIONS;
+```bash
+cockroach sql --insecure -e "SHOW ALL ZONE CONFIGURATIONS;"
 ```
 
 Confirm the output has the right constraints.  PII should have a constraint of "Encrypt" and Non-PII should have a contraint of "Open" )
 
-```
-...
-TABLE defaultdb.public.pii     | ALTER TABLE defaultdb.public.pii CONFIGURE ZONE USING     | constraints = '[+encrypt]'
-TABLE defaultdb.public.non_pii | ALTER TABLE defaultdb.public.non_pii CONFIGURE ZONE USING | constraints = '[+open]'
-...
-```
+`...`
+
+`TABLE defaultdb.public.pii     | ALTER TABLE defaultdb.public.pii CONFIGURE ZONE USING     | constraints = '[+encrypt]'`
+
+`TABLE defaultdb.public.non_pii | ALTER TABLE defaultdb.public.non_pii CONFIGURE ZONE USING | constraints = '[+open]'`
+
+
 
 ## Verify Setup
 
@@ -192,7 +194,7 @@ ORDER BY range_id;
 
 And as expected, store ids for PII table ranges include store ids 1, 3, and 5.
 
-```sql
+```
 range_id | node_id | store_id
 -----------+---------+-----------
 37 |       1 |        1
@@ -206,6 +208,9 @@ The same step above can be used to confirm the store ids for the Non-PII table.
 
 ```sql
 SELECT range_id, replicas FROM [SHOW RANGES FROM TABLE non_pii];
+```
+
+```
   range_id | replicas
 -----------+-----------
         38 | {2,4,6}
@@ -222,7 +227,9 @@ FROM
 ) AS repls
 JOIN crdb_internal.kv_store_status AS ss ON (ss.store_id = repls.store_id)
 ORDER BY range_id;
+```
 
+```
 range_id | node_id | store_id
 -----------+---------+-----------
 38 |       1 |        2
@@ -231,4 +238,14 @@ range_id | node_id | store_id
 (3 rows)
 ```
 
-And indeed, the range with range_id 38 is stored on stores 2, 4 and 6.
+And indeed, the range with range_id 38 is stored on stores 2, 4 and 6!
+
+## Clean Up
+
+To clean up your work, kill the CockroachDB process and remove the directories you created above.
+
+```bash
+pkill -9 cockroach
+rm -Rf "${keypath}"
+rm -Rf "${storepath}"
+```
