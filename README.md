@@ -10,8 +10,7 @@ A few days ago, both Artem and Chris were working with two different customers t
 - Create an Encryption Key (AES-128)
 - Start a CockroachDB Cluster with an Encrypted Non-Encrypted Store
 - Create & Assign PII and Non PII tables to Encrypted and Non-Encrypted stores
-- Insert Sample Data
-- Verify Data
+- Verify Setup
 
 ----
 
@@ -113,70 +112,57 @@ Now let’s look at the ranges of the table to see if they have been moved to th
 SHOW ALL ZONE CONFIGURATIONS;
 ```
 
-we are going to focus only on the last two tables, the trimmed output is below
+Confirm the output has the right constraints.  PII should have a constraint of "Encrypt" and Non-PII should have a contraint of "Open" )
 
-
-```sql
-TABLE defaultdb.public.pii                       | ALTER TABLE defaultdb.public.pii CONFIGURE ZONE USING
-                                                 |     constraints = '[+encrypt]'
-TABLE defaultdb.public.non_pii                   | ALTER TABLE defaultdb.public.non_pii CONFIGURE ZONE USING
-                                                 |     constraints = '[+open]'
+```
+...
+TABLE defaultdb.public.pii     | ALTER TABLE defaultdb.public.pii CONFIGURE ZONE USING     | constraints = '[+encrypt]'
+TABLE defaultdb.public.non_pii | ALTER TABLE defaultdb.public.non_pii CONFIGURE ZONE USING | constraints = '[+open]'
+...
 ```
 
-```sql
-SHOW RANGES FROM TABLE pii;
+## Verify Setup
+
+Verifying that the tables are in the right place require us to query some of the internal meta data of CockroachDB.  To do this, we need to do the following:
+- Find the Table Ranges
+- Find the Encrypted and Non-Encrypted Store Ids
+- Confirm that the ranges from the tables are mapped to the correct stores.
+
+Let's start a SQL terminal session to run these commands
+
+```bash
+cockroach sql --insecure
 ```
 
-```sql
-start_key | end_key | range_id | range_size_mb | lease_holder | lease_holder_locality | replicas |                               replica_localities
-------------+---------+----------+---------------+--------------+-----------------------+----------+----------------------------------------------------------------------------------
-NULL      | NULL    |       37 |      0.000027 |            5 | NULL                  | {1,3,5}  | {"region=local,zone=local","region=local,zone=local","region=local,zone=local"}
-```
+#### Find the Table Ranges
 
-We can even inspect the range at the per row level
+Using the `SHOW RANGES` command, we can easily find the range ids for the pii table.
 
 ```sql
-SHOW RANGE FROM TABLE pii FOR ROW ('1');
+SELECT range_id, replicas FROM [SHOW RANGES FROM TABLE pii];
 ```
 
-Notice that the range in question is number 37
+The output shows the range ids that we want to verify.  As you can see, we have one range to verfiy (range_id = 37).
 
-```sql
-SELECT
-	range_id, node_id, repls.store_id
-FROM
-	(
-		SELECT
-			range_id, unnest(replicas) AS store_id
-		FROM
-			crdb_internal.ranges_no_leases
-		WHERE
-			table_name = 'pii'
-	)
-		AS repls
-	JOIN crdb_internal.kv_store_status AS ss ON (ss.store_id = repls.store_id)
-ORDER BY
-	range_id;
+```
+range_id | replicas
+-----------+-----------
+      37 | {1,3,5}
 ```
 
-```sql
-range_id | node_id | store_id
------------+---------+-----------
-37 |       1 |        1
-37 |       2 |        3
-37 |       3 |        5
-```
+#### Find the Encrypted and Non-Encrypted Store Ids
 
-We can see that range 37 associated with the table `pii` is on stores 1, 3, 5 across the three nodes.
-
-Let's list out the stores and their associated attributes per node
+Now let's query an internal table called `crdb_internal.kv_store_status` to find out all of the stores being used in the cluster and which attributes they have.
 
 ```sql
 SELECT node_id, store_id, attrs
 FROM crdb_internal.kv_store_status;
 ```
 
-```sql
+As you can see below, there are 6 stores.  3 of which have an **["encrypt"]** attribute and 3 that have an **["open"]** attribute.
+
+
+```
 node_id | store_id |    attrs
 ----------+----------+--------------
       1 |        1 | ["encrypt"]
@@ -187,51 +173,62 @@ node_id | store_id |    attrs
       3 |        6 | ["open"]
 ```
 
-and indeed, store_ids 1, 3, 5 are associated with the encrypted disk.
+#### Confirm that the ranges from the tables are mapped to the correct stores.
 
-Let's take a look at the range associated with the `non-pii` table.
+Last but not least, let's confirm that the ranges from the tables are mapped to the correct stores.  This query is bit sophisticated but it will get us the right answer.  The query looks up the range id, node id and store id for a given table name.  So the "PII" table, we would expect stores 1,3 and 5 to be in the output.
+
+
+```sql
+SELECT range_id, node_id, repls.store_id
+FROM
+(
+  SELECT range_id, unnest(replicas) AS store_id
+	FROM crdb_internal.ranges_no_leases
+	WHERE table_name = 'pii'
+) AS repls
+JOIN crdb_internal.kv_store_status AS ss ON (ss.store_id = repls.store_id)
+ORDER BY range_id;
+```
+
+And as expected, store ids for PII table ranges include store ids 1, 3, and 5.
+
+```sql
+range_id | node_id | store_id
+-----------+---------+-----------
+37 |       1 |        1
+37 |       2 |        3
+37 |       3 |        5
+(3 rows)
+```
+
+The same step above can be used to confirm the store ids for the Non-PII table.
+
 
 ```sql
 SELECT range_id, replicas FROM [SHOW RANGES FROM TABLE non_pii];
-```
-
-```sql
-SELECT range_id, replicas FROM [SHOW RANGES FROM TABLE non_pii];
-```
-
-```sql
-root@:26257/defaultdb> SELECT range_id, replicas FROM [SHOW RANGES FROM TABLE non_pii];
   range_id | replicas
 -----------+-----------
         38 | {2,4,6}
 ```
 
-The range in question is 38.
-
-Let's confirm the range_id and store_id correllate
 
 ```sql
-SELECT        range_id, node_id, repls.store_id
+SELECT range_id, node_id, repls.store_id
 FROM
-        (
-                SELECT                        range_id, unnest(replicas) AS store_id
-                FROM
-                        crdb_internal.ranges_no_leases
-                WHERE
-                        table_name = 'non_pii'
-        )
-                AS repls
-        JOIN crdb_internal.kv_store_status AS ss ON (ss.store_id = repls.store_id)
-ORDER BY
-        range_id;
-```
+(
+  SELECT range_id, unnest(replicas) AS store_id
+  FROM crdb_internal.ranges_no_leases
+  WHERE table_name = 'non_pii'
+) AS repls
+JOIN crdb_internal.kv_store_status AS ss ON (ss.store_id = repls.store_id)
+ORDER BY range_id;
 
-```sql
 range_id | node_id | store_id
 -----------+---------+-----------
-      38 |       1 |        2
-      38 |       2 |        4
-      38 |       3 |        6
+38 |       1 |        2
+38 |       2 |        4
+38 |       3 |        6
+(3 rows)
 ```
 
-and indeed, the range with range_id 38 is stored on stores 2, 4 and 6.
+And indeed, the range with range_id 38 is stored on stores 2, 4 and 6.
