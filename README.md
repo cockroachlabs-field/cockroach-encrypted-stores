@@ -1,8 +1,5 @@
-<<<<<<< HEAD
 # Selective Encryption for CockroachDB Stores
 =======
-# Encryption at rest
->>>>>>> 0886063 (wip)
 
 ## This tutorial walks through setting up two disks per node, with one disk encrypted and containing sensitive information and the other disk having plaintext data.
 
@@ -13,14 +10,14 @@ The steps to set up encryption are documented [here](https://www.cockroachlabs.c
 ### Setup a working directory and an environment variable
 
 ```bash
-mkdir -p ${PWD}/workdir
-export dir="${PWD}/workdir"
+export keypath="${PWD}/workdir/key"
+export storepath="${PWD}/workdir/data"
 ```
 
 ### Create an encryption key to encrypt a CockroachDB store
 
 ```bash
-cockroach gen encryption-key -s 128 ${dir}/aes-128.key
+cockroach gen encryption-key -s 128 $keypath/aes-128.key
 ```
 
 ```bash
@@ -34,10 +31,9 @@ The syntax for this is `--store=path=${dir}/1e/data,attrs=encrypt` and `--store=
 ```bash
 cockroach start \
 --insecure \
---store=path=${dir}/1e/data,attrs=encrypt \
---store=path=${dir}/1o/data,attrs=open \
---log-dir=${dir}/1/logs \
---enterprise-encryption=path=${dir}/1e/data,key=/Users/artem/Documents/cockroach-work/cockroach-demo/workdir/aes-128.key,old-key=plain \
+--store=path=$storepath/1e/data,attrs=encrypt \
+--store=path=$storepath/1o/data,attrs=open \
+--enterprise-encryption=path=$storepath/1e/data,key=$keypath/aes-128.key,old-key=plain \
 --listen-addr=127.0.0.1 \
 --port=26257 \
 --http-port=8080 \
@@ -47,10 +43,9 @@ cockroach start \
 
 cockroach start \
 --insecure \
---store=path=${dir}/2e/data,attrs=encrypt \
---store=path=${dir}/2o/data,attrs=open \
---log-dir=${dir}/2/logs \
---enterprise-encryption=path=${dir}/2e/data,key=/Users/artem/Documents/cockroach-work/cockroach-demo/workdir/aes-128.key,old-key=plain \
+--store=path=$storepath/2e/data,attrs=encrypt \
+--store=path=$storepath/2o/data,attrs=open \
+--enterprise-encryption=path=$storepath/2e/data,key=$keypath/aes-128.key,old-key=plain \
 --listen-addr=127.0.0.1 \
 --port=26259 \
 --http-port=8081 \
@@ -60,10 +55,9 @@ cockroach start \
 
 cockroach start \
 --insecure \
---store=path=${dir}/3e/data,attrs=encrypt \
---store=path=${dir}/3o/data,attrs=open \
---log-dir=${dir}/3/logs \
---enterprise-encryption=path=${dir}/3e/data,key=/Users/artem/Documents/cockroach-work/cockroach-demo/workdir/aes-128.key,old-key=plain \
+--store=path=$storepath/3e/data,attrs=encrypt \
+--store=path=$storepath/3o/data,attrs=open \
+--enterprise-encryption=path=$storepath/3e/data,key=$keypath/aes-128.key,old-key=plain \
 --listen-addr=127.0.0.1 \
 --port=26261 \
 --http-port=8082 \
@@ -78,52 +72,59 @@ Now that the cluster is created, let’s initialize it.
 cockroach init --insecure
 ```
 
-Now the fun part, let’s create a customers table, put some data in and pin it to the encrypted stores
+Now the fun part, let’s create a `pii` table, put some data in and pin it to the encrypted stores
 
 ```bash
+
 cockroach sql --insecure \
--e "create table customers (k int primary key, v string);" \
--e "insert into customers (k,v) values (1,'bob');" \
--e "alter table customers configure zone using constraints='[+encrypt]';"
+-e "create table pii (k int primary key, v string);" \
+-e "alter table pii configure zone using constraints='[+encrypt]';" \
+-e "insert into pii (k,v) values (1,'bob');"
 ```
 
-Now let’s look at the ranges of the table to see if they have been move to the encrypted store.
+Let's create a new table containing non-sensitive data called `non-pii`, pin it to the plaintext store
 
-```sql
-SHOW ZONE CONFIGURATION FOR TABLE customers;
+```bash
+
+cockroach sql --insecure \
+-e "create table non_pii (k int primary key, v string);" \
+-e "alter table non_pii configure zone using constraints='[+open]';" \
+-e "insert into non_pii (k,v) values (1,'bob');"
 ```
 
-```sql
-      target      |               raw_config_sql
-------------------+---------------------------------------------
-  TABLE customers | ALTER TABLE customers CONFIGURE ZONE USING
-                  |     range_min_bytes = 134217728,
-                  |     range_max_bytes = 536870912,
-                  |     gc.ttlseconds = 90000,
-                  |     num_replicas = 3,
-                  |     constraints = '[+encrypt]',
-                  |     lease_preferences = '[]'
-(1 row)
+Now let’s look at the ranges of the table to see if they have been moved to the encrypted store.
 
-Time: 5ms total (execution 5ms / network 0ms)
+```sql
+SHOW ALL ZONE CONFIGURATIONS;
 ```
 
-```sql
-SHOW RANGES FROM TABLE customers;
-```
+we are going to focus only on the last two tables, the trimmed output is below
+
 
 ```sql
-  start_key | end_key | range_id | range_size_mb | lease_holder |  lease_holder_locality  | replicas |                               replica_localities
-------------+---------+----------+---------------+--------------+-------------------------+----------+----------------------------------------------------------------------------------
-  NULL      | NULL    |       36 |      0.000027 |            3 | region=local,zone=local | {1,3,5}  | {"region=local,zone=local","region=local,zone=local","region=local,zone=local"}
-(1 row)
-
-Time: 8ms total (execution 8ms / network 0ms)
+TABLE defaultdb.public.pii                       | ALTER TABLE defaultdb.public.pii CONFIGURE ZONE USING
+                                                 |     constraints = '[+encrypt]'
+TABLE defaultdb.public.non_pii                   | ALTER TABLE defaultdb.public.non_pii CONFIGURE ZONE USING
+                                                 |     constraints = '[+open]'
 ```
 
 ```sql
-SHOW RANGE FROM TABLE customers FOR ROW ('1');
+SHOW RANGES FROM TABLE pii;
 ```
+
+```sql
+start_key | end_key | range_id | range_size_mb | lease_holder | lease_holder_locality | replicas |                               replica_localities
+------------+---------+----------+---------------+--------------+-----------------------+----------+----------------------------------------------------------------------------------
+NULL      | NULL    |       37 |      0.000027 |            5 | NULL                  | {1,3,5}  | {"region=local,zone=local","region=local,zone=local","region=local,zone=local"}
+```
+
+We can even inspect the range at the per row level
+
+```sql
+SHOW RANGE FROM TABLE pii FOR ROW ('1');
+```
+
+Notice that the range in question is number 37
 
 ```sql
 
