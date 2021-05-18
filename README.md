@@ -142,30 +142,6 @@ SHOW RANGE FROM TABLE pii FOR ROW ('1');
 Notice that the range in question is number 37
 
 ```sql
-
--- show node attributes per node
-SELECT node_id, attrs, locality FROM crdb_internal.kv_node_status;
-
--- show store attributes per node
-SELECT node_id, store_id, attrs FROM crdb_internal.kv_store_status;
-
-SELECT
-	node_id, repls.store_id, count(repls.store_id)
-FROM
-	(
-		SELECT
-			unnest(replicas) AS store_id
-		FROM
-			crdb_internal.ranges_no_leases
-		WHERE
-			table_name = 'customers'
-	)
-		AS repls
-	JOIN crdb_internal.kv_store_status AS ss ON (ss.store_id = repls.store_id)
-GROUP BY
-	node_id, repls.store_id;
-
-
 SELECT
 	range_id, node_id, repls.store_id
 FROM
@@ -175,7 +151,7 @@ FROM
 		FROM
 			crdb_internal.ranges_no_leases
 		WHERE
-			table_name = 'customers'
+			table_name = 'pii'
 	)
 		AS repls
 	JOIN crdb_internal.kv_store_status AS ss ON (ss.store_id = repls.store_id)
@@ -183,8 +159,79 @@ ORDER BY
 	range_id;
 ```
 
-### Force the plaintext data off of encrypted disk
+```sql
+range_id | node_id | store_id
+-----------+---------+-----------
+37 |       1 |        1
+37 |       2 |        3
+37 |       3 |        5
+```
+
+We can see that range 37 associated with the table `pii` is on stores 1, 3, 5 across the three nodes.
+
+Let's list out the stores and their associated attributes per node
 
 ```sql
-ALTER TABLE customers2 CONFIGURE ZONE USING CONSTRAINTS='[-encrypt]';
+SELECT node_id, store_id, attrs
+FROM crdb_internal.kv_store_status;
 ```
+
+```sql
+node_id | store_id |    attrs
+----------+----------+--------------
+      1 |        1 | ["encrypt"]
+      1 |        2 | ["open"]
+      2 |        3 | ["encrypt"]
+      2 |        4 | ["open"]
+      3 |        5 | ["encrypt"]
+      3 |        6 | ["open"]
+```
+
+and indeed, store_ids 1, 3, 5 are associated with the encrypted disk.
+
+Let's take a look at the range associated with the `non-pii` table.
+
+```sql
+SELECT range_id, replicas FROM [SHOW RANGES FROM TABLE non_pii];
+```
+
+```sql
+SELECT range_id, replicas FROM [SHOW RANGES FROM TABLE non_pii];
+```
+
+```sql
+root@:26257/defaultdb> SELECT range_id, replicas FROM [SHOW RANGES FROM TABLE non_pii];
+  range_id | replicas
+-----------+-----------
+        38 | {2,4,6}
+```
+
+The range in question is 38.
+
+Let's confirm the range_id and store_id correllate
+
+```sql
+SELECT        range_id, node_id, repls.store_id
+FROM
+        (
+                SELECT                        range_id, unnest(replicas) AS store_id
+                FROM
+                        crdb_internal.ranges_no_leases
+                WHERE
+                        table_name = 'non_pii'
+        )
+                AS repls
+        JOIN crdb_internal.kv_store_status AS ss ON (ss.store_id = repls.store_id)
+ORDER BY
+        range_id;
+```
+
+```sql
+range_id | node_id | store_id
+-----------+---------+-----------
+      38 |       1 |        2
+      38 |       2 |        4
+      38 |       3 |        6
+```
+
+and indeed, the range with range_id 38 is stored on stores 2, 4 and 6.
