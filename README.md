@@ -1,9 +1,9 @@
-# Encryption at rest
-#
+# Selective Encryption for CockroachDB Stores
 
---
+#### This tutorial walks through setting up two disks per node, with one disk encrypted and containing sensitive information and the other disk having plaintext data.
 
-## This tutorial walks through setting up two disks per node, with one disk encrypted and containing sensitive information and the other disk having plaintext data
+A few days ago I was working with a customer that had a requirement to encrypt only certain tables in the database.  The customer acknowledged that there is a slight overhead for using data at rest encryption and they didn't want to incur the ever so slight penalty on less sensitive data.  Creating a CockroachDB cluster that can encrypt sensitive data but leave non-sensitive data in plaintext,  requires creating multiple stores on each of the Cockroach nodes with the proper locality attribute flags.  Once setup, zone configurations for database, tables and rows can be used to pin data to either an encrypted store or a plain text store.  The setup for this is rather simple which this blog will walk you through.
+
 
 ## Create encryption key to encrypt a CockroachDB store
 
@@ -166,4 +166,3 @@ ORDER BY
 ```sql
 ALTER TABLE customers2 CONFIGURE ZONE USING CONSTRAINTS='[-encrypt]';
 ```
-
