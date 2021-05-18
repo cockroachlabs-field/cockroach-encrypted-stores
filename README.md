@@ -4,17 +4,20 @@
 # Encryption at rest
 >>>>>>> 0886063 (wip)
 
-#### This tutorial walks through setting up two disks per node, with one disk encrypted and containing sensitive information and the other disk having plaintext data.
+## This tutorial walks through setting up two disks per node, with one disk encrypted and containing sensitive information and the other disk having plaintext data.
 
-A few days ago I was working with a customer that had a requirement to encrypt only certain tables in the database.  The customer acknowledged that there is a slight overhead for using data at rest encryption and they didn't want to incur the ever so slight penalty on less sensitive data.  Creating a CockroachDB cluster that can encrypt sensitive data but leave non-sensitive data in plaintext,  requires creating multiple stores on each of the Cockroach nodes with the proper locality attribute flags.  Once setup, zone configurations for database, tables and rows can be used to pin data to either an encrypted store or a plain text store.  The setup for this is rather simple which this blog will walk you through.
+A few days ago I was working with a customer that had a requirement to encrypt only certain tables in a database. The customer acknowledged that there is a slight overhead for using data at rest encryption and they didn't want to incur the ever so slight penalty on less sensitive data. Creating a CockroachDB cluster that can encrypt sensitive data but leave non-sensitive data in plaintext, requires creating multiple stores on each of the Cockroach nodes with the proper locality attribute flags. Once setup, zone configurations for database, tables and rows can be used to pin data to either an encrypted store or a plain text store. The setup for this is rather simple which this blog will walk you through.
 
+The steps to set up encryption are documented [here](https://www.cockroachlabs.com/docs/v21.1/encryption.html).
 
-## Create encryption key to encrypt a CockroachDB store
+### Setup a working directory and an environment variable
 
 ```bash
 mkdir -p ${PWD}/workdir
 export dir="${PWD}/workdir"
 ```
+
+### Create an encryption key to encrypt a CockroachDB store
 
 ```bash
 cockroach gen encryption-key -s 128 ${dir}/aes-128.key
@@ -24,10 +27,9 @@ cockroach gen encryption-key -s 128 ${dir}/aes-128.key
 successfully created AES-128 key: /Users/artem/Documents/cockroach-work/cockroach-demo/workdir/aes-128.key
 ```
 
-## Create a CockroachDB cluster with 3 nodes containing two stores, one encrypted and one plaintext
+### Create a CockroachDB cluster with 3 nodes containing two stores each, one encrypted and one plaintext
 
-The syntax for this is --store=path=${dir}/1e/data,attrs=encrypt and --store=path=${dir}/1o/data,attrs=open respectively. The attributes at the end of the store creation is used to create a reference for pinning database, table or row of data to an encrypted store or not using zone configurations. Additionally, the encryption key we create in the prior step is reference in the --enterprise-encryption flag as well.
-
+The syntax for this is `--store=path=${dir}/1e/data,attrs=encrypt` and `--store=path=${dir}/1o/data,attrs=open` respectively. The attributes at the end of the store creation are used to create a reference for pinning a database, a table or a row of data to an encrypted store. Additionally, the encryption key we created in the prior step is referenced in the `--enterprise-encryption` flag as well.
 
 ```bash
 cockroach start \
