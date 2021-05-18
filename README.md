@@ -1,32 +1,44 @@
 # Selective Encryption for CockroachDB Stores
-=======
 
-## This tutorial walks through setting up two disks per node, with one disk encrypted and containing sensitive information and the other disk having plaintext data.
+*This tutorial walks through setting up two disks per node, with one disk encrypted and containing sensitive information and the other disk having plaintext data.*
 
-A few days ago I was working with a customer that had a requirement to encrypt only certain tables in a database. The customer acknowledged that there is a slight overhead for using data at rest encryption and they didn't want to incur the ever so slight penalty on less sensitive data. Creating a CockroachDB cluster that can encrypt sensitive data but leave non-sensitive data in plaintext, requires creating multiple stores on each of the Cockroach nodes with the proper locality attribute flags. Once setup, zone configurations for database, tables and rows can be used to pin data to either an encrypted store or a plain text store. The setup for this is rather simple which this blog will walk you through.
+## Motivation
 
-The steps to set up encryption are documented [here](https://www.cockroachlabs.com/docs/v21.1/encryption.html).
+A few days ago, both Artem and Chris were working with two different customers that had a requirement to encrypt only certain tables in the database.  So we joined forces to create a demonstration and published this blog post.  Both customers acknowledged the slight overhead for using data at rest encryption.  However, both customers did not want to incur the ever so slight penalty on less sensitive data.  So we embarked on creating a CockroachDB cluster that can encrypt sensitive data but leave non-sensitive data in plaintext.  To do this, it requires utilizing multiple CockroachDB stores on each of the Cockroach nodes with the proper locality attribute flags.  Once setup, zone configurations can be applied for a database, tables and/or rows.  In this blog, we setup the zone configuration at the table level to use encrypted store, or not. The setup for this is rather simple which this blog will walk you through.
 
-### Setup a working directory and an environment variable
+#### High Level Steps
+- Create an Encryption Key (AES-128)
+- Start a CockroachDB Cluster with an Encrypted Non-Encrypted Store
+- Create & Assign PII and Non PII tables to Encrypted and Non-Encrypted stores
+- Insert Sample Data
+- Verify Data
+
+----
+
+## Step By Step Instructions
+### Create an Encryption Key
+
+First, let's assign some variables to easily manage this setup in a scriptable fashion.  We'll create a `$storepath` variable which will tell CockroachDB where to keep it's data.  And we'll use a `$keypath` variable which will have the location of our encryption key.
 
 ```bash
 export keypath="${PWD}/workdir/key"
 export storepath="${PWD}/workdir/data"
 ```
 
-### Create an encryption key to encrypt a CockroachDB store
+Create an Encryption Key
 
 ```bash
 cockroach gen encryption-key -s 128 $keypath/aes-128.key
 ```
 
-```bash
+Confirm the Encryption Key was created
+```
 successfully created AES-128 key: /Users/artem/Documents/cockroach-work/cockroach-demo/workdir/aes-128.key
 ```
 
-### Create a CockroachDB cluster with 3 nodes containing two stores each, one encrypted and one plaintext
+### Start a CockroachDB Cluster with an Encrypted and Non-Encrypted Store.
 
-The syntax for this is `--store=path=${dir}/1e/data,attrs=encrypt` and `--store=path=${dir}/1o/data,attrs=open` respectively. The attributes at the end of the store creation are used to create a reference for pinning a database, a table or a row of data to an encrypted store. Additionally, the encryption key we created in the prior step is referenced in the `--enterprise-encryption` flag as well.
+Next, let's create a cluster with an encrypted store and a plaintext store.  The syntax for this is `--store=path=${dir}/1e/data,attrs=encrypt` and `--store=path=${dir}/1o/data,attrs=open` respectively. The attributes at the end of the store creation is used pinning a table to an encrypted store or not. Additionally, the encryption key we created in the prior step is referenced in the `--enterprise-encryption` flag as well.
 
 ```bash
 cockroach start \
@@ -72,20 +84,23 @@ Now that the cluster is created, let’s initialize it.
 cockroach init --insecure
 ```
 
-Now the fun part, let’s create a `pii` table, put some data in and pin it to the encrypted stores
+### Create & Assign PII and Non PII tables to Encrypted and Non-Encrypted stores
+
+
+This is the cool part, let’s create a PII and a Non-PII tables and put each of them in the proper ecrypted or non-encrypted stores.  For the PII table, we'll create the table, set it's zone configuration to use the encrypted store and then insert some sample data to confirm our setup.
+
+Let’s create the PII table, apply it to the encrypted store and add some sample data.
 
 ```bash
-
 cockroach sql --insecure \
 -e "create table pii (k int primary key, v string);" \
 -e "alter table pii configure zone using constraints='[+encrypt]';" \
 -e "insert into pii (k,v) values (1,'bob');"
 ```
 
-Let's create a new table containing non-sensitive data called `non-pii`, pin it to the plaintext store
+Similarly, let’s create a Non-PII table, apply it to the non-encrypted store and add some sample data.
 
 ```bash
-
 cockroach sql --insecure \
 -e "create table non_pii (k int primary key, v string);" \
 -e "alter table non_pii configure zone using constraints='[+open]';" \
