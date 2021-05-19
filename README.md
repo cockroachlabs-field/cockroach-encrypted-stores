@@ -8,7 +8,7 @@ A few days ago, both Artem and Chris were working with two different customers t
 
 #### High Level Steps
 - Create an Encryption Key (AES-128)
-- Start a CockroachDB Cluster with an Encrypted and Non-Encrypted Store
+- Start a CockroachDB Cluster with an Encrypted and a Non-Encrypted Store
 - Create & Assign PII and Non PII tables to Encrypted and Non-Encrypted stores
 - Verify Setup
 
