@@ -4,11 +4,11 @@
 
 ## Motivation
 
-A few days ago, both Artem and Chris were working with two different customers that had a requirement to encrypt only certain tables in the database.  So we joined forces to create a demonstration and published this blog post.  Both customers acknowledged the slight overhead for using data at rest encryption.  However, both customers did not want to incur the ever so slight penalty on less sensitive data.  So we embarked on creating a CockroachDB cluster that can encrypt sensitive data but leave non-sensitive data in plaintext.  To do this, it requires utilizing multiple CockroachDB stores on each of the Cockroach nodes with the proper locality attribute flags.  Once setup, zone configurations can be applied for a database, tables and/or rows.  In this blog, we setup the zone configuration at the table level to use encrypted store, or not. The setup for this is rather simple which this blog will walk you through.
+A few days ago, both Artem and Chris were working with two different customers that had a requirement to encrypt only certain tables in the database.  So we joined forces to create a demonstration and published this blog post.  Both customers acknowledged the slight overhead for using data at rest encryption.  However, both customers did not want to incur the ever so slight penalty on less sensitive data.  So we embarked on creating a CockroachDB cluster that can encrypt sensitive data but leave non-sensitive data in plaintext.  To do this, it requires utilizing multiple CockroachDB stores on each of the Cockroach nodes with the proper locality attribute flags.  Once setup, zone configurations can be applied to a database, tables and/or rows.  In this blog, we setup the zone configuration at the table level to use encrypted store, or not. The setup for this is rather simple which this blog will walk you through.
 
 #### High Level Steps
 - Create an Encryption Key (AES-128)
-- Start a CockroachDB Cluster with an Encrypted Non-Encrypted Store
+- Start a CockroachDB Cluster with an Encrypted and Non-Encrypted Store
 - Create & Assign PII and Non PII tables to Encrypted and Non-Encrypted stores
 - Verify Setup
 
@@ -38,7 +38,7 @@ Confirm the Encryption Key was created
 
 ### Start a CockroachDB Cluster with an Encrypted and Non-Encrypted Store.
 
-Next, let's create a cluster with an encrypted store and a plaintext store.  The syntax for this is `--store=path=${dir}/1e/data,attrs=encrypt` and `--store=path=${dir}/1o/data,attrs=open` respectively. The attributes at the end of the store creation is used pinning a table to an encrypted store or not. Additionally, the encryption key we created in the prior step is referenced in the `--enterprise-encryption` flag as well.
+Next, let's create a cluster with an encrypted store and a plaintext store.  The syntax for this is `--store=path=${dir}/1e/data,attrs=encrypt` and `--store=path=${dir}/1o/data,attrs=open` respectively. The attributes at the end of the store creation are used pinning a table to an encrypted store. Additionally, the encryption key we created in the prior step is referenced in the `--enterprise-encryption` flag as well.
 
 ```bash
 cockroach start \
@@ -125,7 +125,7 @@ Confirm the output has the right constraints.  PII should have a constraint of "
 
 ## Verify Setup
 
-Verifying that the tables are in the right place require us to query some of the internal meta data of CockroachDB.  To do this, we need to do the following:
+Verifying that the tables are in the right place requires us to query some of the internal meta data of CockroachDB.  To do this, we need to do the following:
 - Find the Table Ranges
 - Find the Encrypted and Non-Encrypted Store Ids
 - Confirm that the ranges from the tables are mapped to the correct stores.
