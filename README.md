@@ -1,4 +1,4 @@
-# Selective Encryption for CockroachDB Stores
+# Selective Encryption for CockroachDB Tables
 
 *This tutorial walks through setting up two disks per node, with one disk encrypted and containing sensitive information and the other disk having plaintext data.*
 
